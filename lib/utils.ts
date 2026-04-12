@@ -17,3 +17,12 @@ export function formatSemester(semester: string): string {
   const [year, sem] = semester.split("-");
   return `${year}년 ${sem}학기`;
 }
+
+export function getSemesterFromDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const semester = month >= 3 && month <= 8 ? 1 : 2;
+  const semesterYear = month <= 2 ? year - 1 : year;
+  return `${semesterYear}-${semester}`;
+}
