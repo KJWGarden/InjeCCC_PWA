@@ -12,7 +12,7 @@ import {
 const createSessionSchema = z.object({
   session_date: z.string().min(1, "날짜를 입력해주세요"),
   title: z.string().optional(),
-  qr_duration_minutes: z.number().min(1).max(120).default(15),
+  qr_duration_minutes: z.number().min(1).max(120).default(60),
 });
 
 const updateSessionSchema = z.object({
@@ -48,8 +48,7 @@ export async function POST(request: Request) {
     const token = crypto.randomUUID();
 
     const expiresAt = new Date(
-      new Date(`${session_date}T23:59:59`).getTime() +
-        qr_duration_minutes * 60 * 1000
+      Date.now() + qr_duration_minutes * 60 * 1000
     ).toISOString();
 
     // Create Google Sheets tab (non-blocking on failure)
@@ -70,6 +69,7 @@ export async function POST(request: Request) {
         title: title || null,
         token,
         token_expires_at: expiresAt,
+        qr_duration_minutes,
         is_active: true,
         sheet_title: sheetTitle,
       })
@@ -114,8 +114,7 @@ export async function PUT(request: Request) {
     const semester = getSemesterFromDate(session_date);
 
     const expiresAt = new Date(
-      new Date(`${session_date}T23:59:59`).getTime() +
-        qr_duration_minutes * 60 * 1000
+      Date.now() + qr_duration_minutes * 60 * 1000
     ).toISOString();
 
     const supabase = createSupabaseClient();
@@ -146,6 +145,7 @@ export async function PUT(request: Request) {
         semester,
         title: title || null,
         token_expires_at: expiresAt,
+        qr_duration_minutes,
         sheet_title: newSheetTitle,
       })
       .eq("id", id)
@@ -156,6 +156,76 @@ export async function PUT(request: Request) {
       console.error("Session update error:", error);
       return NextResponse.json(
         { error: "채플 세션 수정에 실패했습니다" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true, session: data });
+  } catch {
+    return NextResponse.json(
+      { error: "잘못된 요청입니다" },
+      { status: 400 }
+    );
+  }
+}
+
+const renewSchema = z.object({
+  id: z.string().uuid(),
+});
+
+export async function PATCH(request: Request) {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: "인증이 필요합니다" }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
+    const result = renewSchema.safeParse(body);
+
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.error.issues[0].message },
+        { status: 400 }
+      );
+    }
+
+    const { id } = result.data;
+    const supabase = createSupabaseClient();
+
+    // Get current session's duration
+    const { data: current } = await supabase
+      .from("chapel_sessions")
+      .select("qr_duration_minutes")
+      .eq("id", id)
+      .single();
+
+    if (!current) {
+      return NextResponse.json(
+        { error: "세션을 찾을 수 없습니다" },
+        { status: 404 }
+      );
+    }
+
+    const newToken = crypto.randomUUID();
+    const expiresAt = new Date(
+      Date.now() + current.qr_duration_minutes * 60 * 1000
+    ).toISOString();
+
+    const { data, error } = await supabase
+      .from("chapel_sessions")
+      .update({
+        token: newToken,
+        token_expires_at: expiresAt,
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("QR renew error:", error);
+      return NextResponse.json(
+        { error: "QR 재발급에 실패했습니다" },
         { status: 500 }
       );
     }

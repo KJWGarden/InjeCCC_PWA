@@ -26,3 +26,9 @@ export function getSemesterFromDate(dateStr: string): string {
   const semesterYear = month <= 2 ? year - 1 : year;
   return `${semesterYear}-${semester}`;
 }
+
+export function getNextSemester(): string {
+  const current = getCurrentSemester();
+  const [year, sem] = current.split("-").map(Number);
+  return sem === 1 ? `${year}-2` : `${year + 1}-1`;
+}

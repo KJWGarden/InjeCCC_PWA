@@ -33,6 +33,7 @@ export interface ChapelSession {
   title: string | null;
   token: string;
   token_expires_at: string;
+  qr_duration_minutes: number;
   is_active: boolean;
   sheet_title: string | null;
   created_at: string;

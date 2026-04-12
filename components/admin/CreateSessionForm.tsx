@@ -7,7 +7,7 @@ export default function CreateSessionForm() {
   const router = useRouter();
   const [sessionDate, setSessionDate] = useState("");
   const [title, setTitle] = useState("");
-  const [qrDuration, setQrDuration] = useState(15);
+  const [qrDuration, setQrDuration] = useState(60);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -37,6 +37,12 @@ export default function CreateSessionForm() {
       setSessionDate("");
       setTitle("");
       setQrDuration(15);
+
+      // Navigate to the created session's semester
+      const semester = data.session?.semester;
+      if (semester) {
+        router.push(`/admin?semester=${semester}`);
+      }
       router.refresh();
     } catch {
       setError("네트워크 오류가 발생했습니다");

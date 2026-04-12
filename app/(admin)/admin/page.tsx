@@ -1,28 +1,52 @@
 import { getAdminSession } from "@/lib/admin-auth";
 import { createSupabaseClient } from "@/lib/supabase/server";
-import { getCurrentSemester, formatDate } from "@/lib/utils";
+import { getCurrentSemester, getNextSemester, formatDate } from "@/lib/utils";
 import CreateSessionForm from "@/components/admin/CreateSessionForm";
 import AdminLogoutButton from "@/components/admin/AdminLogoutButton";
 import SessionQrModal from "@/components/admin/SessionQrModal";
 import SessionEditModal from "@/components/admin/SessionEditModal";
 import SessionDeleteButton from "@/components/admin/SessionDeleteButton";
+import SemesterSelector from "@/components/admin/SemesterSelector";
 import type { ChapelSession } from "@/lib/supabase/types";
 
-function getQrDurationMinutes(session: ChapelSession): number {
-  const expiresAt = new Date(session.token_expires_at).getTime();
-  const endOfDay = new Date(`${session.session_date}T23:59:59`).getTime();
-  return Math.round((expiresAt - endOfDay) / (60 * 1000));
+interface Props {
+  searchParams: Promise<{ semester?: string }>;
 }
 
-export default async function AdminDashboardPage() {
+export default async function AdminDashboardPage({ searchParams }: Props) {
   const session = (await getAdminSession())!;
   const supabase = createSupabaseClient();
-  const semester = getCurrentSemester();
+  const { semester: semesterParam } = await searchParams;
 
+  // Get all distinct semesters from existing sessions
+  const { data: allSessions } = await supabase
+    .from("chapel_sessions")
+    .select("semester")
+    .order("created_at", { ascending: false });
+
+  const semesterSet = new Set<string>();
+  const currentSemester = getCurrentSemester();
+  semesterSet.add(currentSemester);
+  semesterSet.add(getNextSemester());
+  for (const s of allSessions ?? []) {
+    semesterSet.add(s.semester);
+  }
+
+  // Sort descending: 2026-1 > 2025-2 > 2025-1
+  const semesters = [...semesterSet].sort((a, b) => b.localeCompare(a));
+
+  // Default: use param, else latest session's semester, else current
+  const latestSemester = allSessions?.[0]?.semester;
+  const selectedSemester =
+    semesterParam && semesterSet.has(semesterParam)
+      ? semesterParam
+      : latestSemester ?? currentSemester;
+
+  // Fetch sessions for selected semester
   const { data: sessions } = await supabase
     .from("chapel_sessions")
     .select("*")
-    .eq("semester", semester)
+    .eq("semester", selectedSemester)
     .order("session_date", { ascending: false });
 
   const chapelSessions = (sessions ?? []) as ChapelSession[];
@@ -32,9 +56,7 @@ export default async function AdminDashboardPage() {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-bold">채플 관리</h1>
-          <p className="text-base-content/60 text-sm">
-            {session.username}
-          </p>
+          <p className="text-base-content/60 text-sm">{session.username}</p>
         </div>
         <AdminLogoutButton />
       </div>
@@ -47,9 +69,13 @@ export default async function AdminDashboardPage() {
       </div>
 
       <div>
-        <h2 className="text-lg font-semibold mb-3">
-          현재 학기 채플 목록
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold">채플 목록</h2>
+          <SemesterSelector
+            semesters={semesters}
+            current={selectedSemester}
+          />
+        </div>
         {chapelSessions.length === 0 ? (
           <p className="text-base-content/60 text-sm">
             등록된 채플이 없습니다
@@ -71,6 +97,7 @@ export default async function AdminDashboardPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <SessionQrModal
+                    sessionId={s.id}
                     token={s.token}
                     title={s.title}
                     sessionDate={s.session_date}
@@ -81,7 +108,7 @@ export default async function AdminDashboardPage() {
                     id={s.id}
                     sessionDate={s.session_date}
                     title={s.title}
-                    qrDurationMinutes={getQrDurationMinutes(s)}
+                    qrDurationMinutes={s.qr_duration_minutes}
                   />
                   <SessionDeleteButton sessionId={s.id} />
                   <span

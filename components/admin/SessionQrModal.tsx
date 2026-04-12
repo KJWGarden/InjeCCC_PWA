@@ -1,10 +1,12 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import { formatDate } from "@/lib/utils";
 
 interface SessionQrModalProps {
+  sessionId: string;
   token: string;
   title: string | null;
   sessionDate: string;
@@ -13,6 +15,7 @@ interface SessionQrModalProps {
 }
 
 export default function SessionQrModal({
+  sessionId,
   token,
   title,
   sessionDate,
@@ -20,9 +23,35 @@ export default function SessionQrModal({
   isActive,
 }: SessionQrModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
 
   const expiresAt = new Date(tokenExpiresAt);
   const isExpired = expiresAt < new Date();
+
+  async function handleRenew() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/sessions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: sessionId }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "QR 재발급에 실패했습니다");
+        return;
+      }
+
+      dialogRef.current?.close();
+      router.refresh();
+    } catch {
+      alert("네트워크 오류가 발생했습니다");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <>
@@ -41,12 +70,25 @@ export default function SessionQrModal({
             {formatDate(sessionDate)}
           </p>
 
-          <div className="bg-white p-4 rounded-xl">
+          <div className={`bg-white p-4 rounded-xl ${isExpired ? "opacity-30" : ""}`}>
             <QRCodeSVG value={token} size={256} />
           </div>
 
           {isExpired ? (
-            <p className="text-sm text-error">QR 코드가 만료되었습니다</p>
+            <div className="flex flex-col items-center gap-2">
+              <p className="text-sm text-error">QR 코드가 만료되었습니다</p>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleRenew}
+                disabled={loading}
+              >
+                {loading ? (
+                  <span className="loading loading-spinner loading-sm" />
+                ) : (
+                  "QR 재발급"
+                )}
+              </button>
+            </div>
           ) : (
             <p className="text-sm text-base-content/60">
               만료:{" "}
