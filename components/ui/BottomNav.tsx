@@ -49,21 +49,23 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 flex w-full border-t border-base-300 bg-base-100">
-      {tabs.map((tab) => (
-        <Link
-          key={tab.href}
-          href={tab.href}
-          className={`flex flex-1 flex-col items-center justify-center gap-1 py-2 ${
-            tab.href === "/"
-              ? pathname === "/" ? "text-primary" : "text-base-content/60"
-              : pathname.startsWith(tab.href) ? "text-primary" : "text-base-content/60"
-          }`}
-        >
-          {tab.icon}
-          <span className="text-xs">{tab.label}</span>
-        </Link>
-      ))}
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-base-300 bg-base-100 pb-[env(safe-area-inset-bottom)]">
+      <div className="flex w-full">
+        {tabs.map((tab) => (
+          <Link
+            key={tab.href}
+            href={tab.href}
+            className={`flex flex-1 flex-col items-center justify-center gap-1 py-2 active:opacity-60 transition-opacity duration-100 touch-manipulation ${
+              tab.href === "/"
+                ? pathname === "/" ? "text-primary" : "text-base-content/60"
+                : pathname.startsWith(tab.href) ? "text-primary" : "text-base-content/60"
+            }`}
+          >
+            {tab.icon}
+            <span className="text-xs">{tab.label}</span>
+          </Link>
+        ))}
+      </div>
     </nav>
   );
 }

@@ -13,7 +13,7 @@ export default async function MainLayout({
 
   return (
     <AuthProvider session={session}>
-      <div className="flex flex-col flex-1 pb-16">
+      <div className="flex flex-col flex-1 pb-[calc(4rem+env(safe-area-inset-bottom))]">
         <main className="flex-1 overflow-y-auto">{children}</main>
         <BottomNav />
       </div>
