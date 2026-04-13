@@ -25,6 +25,18 @@ export async function POST(request: Request) {
 
   const supabase = createSupabaseClient();
 
+  // Prevent leader from leaving their own group
+  const { data: group } = await supabase
+    .from("groups")
+    .select("id")
+    .eq("id", result.data.groupId)
+    .eq("leader_id", session.id)
+    .single();
+
+  if (group) {
+    return NextResponse.json({ error: "순장은 순을 나갈 수 없습니다. 순 삭제를 이용해주세요." }, { status: 400 });
+  }
+
   const { error } = await supabase
     .from("group_members")
     .delete()

@@ -67,7 +67,7 @@ export default async function GroupDetailPage({
           <p className="text-sm text-base-content/60">
             순장: {leader.name}
           </p>
-          <p className="text-xs text-base-content/40">순원 {members.length}명</p>
+          <p className="text-xs text-base-content/40">순원 {members.filter((m) => m.id !== leader.id).length}명</p>
         </div>
         <div>
           {isLeader && (

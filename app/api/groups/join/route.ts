@@ -25,6 +25,18 @@ export async function POST(request: Request) {
 
   const supabase = createSupabaseClient();
 
+  // Prevent leader from joining their own group as a member
+  const { data: group } = await supabase
+    .from("groups")
+    .select("id")
+    .eq("id", result.data.groupId)
+    .eq("leader_id", session.id)
+    .single();
+
+  if (group) {
+    return NextResponse.json({ error: "순장은 이미 순에 소속되어 있습니다" }, { status: 400 });
+  }
+
   const { error } = await supabase
     .from("group_members")
     .insert({

@@ -15,7 +15,12 @@ export default async function MyGroupPage() {
     .eq("student_id", session.id)
     .order("joined_at", { ascending: false });
 
-  const myMemberships = memberships ?? [];
+  const myMemberships = (memberships ?? []).filter(
+    (m) => {
+      const group = m.groups as unknown as { leader_id: string };
+      return group.leader_id !== session.id;
+    }
+  );
 
   // Groups I lead
   const { data: ledGroups } = await supabase

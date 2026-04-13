@@ -48,6 +48,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "순 생성 중 오류가 발생했습니다" }, { status: 500 });
   }
 
+  // Add leader as a group member
+  await supabase
+    .from("group_members")
+    .insert({ group_id: group.id, student_id: session.id });
+
   return NextResponse.json({ group });
 }
 
