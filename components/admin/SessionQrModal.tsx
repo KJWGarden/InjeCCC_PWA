@@ -71,7 +71,10 @@ export default function SessionQrModal({
           </p>
 
           <div className={`bg-white p-4 rounded-xl ${isExpired ? "opacity-30" : ""}`}>
-            <QRCodeSVG value={token} size={256} />
+            <QRCodeSVG
+              value={`https://inje-cccattd.vercel.app/scan?token=${token}`}
+              size={256}
+            />
           </div>
 
           {isExpired ? (

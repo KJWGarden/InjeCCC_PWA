@@ -1,6 +1,12 @@
 import QrScanner from "@/components/ui/QrScanner";
 
-export default function ScanPage() {
+interface ScanPageProps {
+  searchParams: Promise<{ token?: string }>;
+}
+
+export default async function ScanPage({ searchParams }: ScanPageProps) {
+  const { token } = await searchParams;
+
   return (
     <div className="p-4 space-y-6">
       <div>
@@ -9,7 +15,7 @@ export default function ScanPage() {
           채플 QR 코드를 스캔하여 출석하세요
         </p>
       </div>
-      <QrScanner />
+      <QrScanner autoToken={token} />
     </div>
   );
 }

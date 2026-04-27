@@ -16,7 +16,22 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-export default function QrScanner() {
+function extractToken(raw: string): string {
+  try {
+    const url = new URL(raw);
+    const t = url.searchParams.get("token");
+    if (t) return t;
+  } catch {
+    // not a URL, use as-is
+  }
+  return raw;
+}
+
+interface QrScannerProps {
+  autoToken?: string;
+}
+
+export default function QrScanner({ autoToken }: QrScannerProps) {
   const [state, setState] = useState<ScanState>({ status: "idle" });
   const [zoom, setZoom] = useState(1);
   const [showZoom, setShowZoom] = useState(false);
@@ -82,17 +97,17 @@ export default function QrScanner() {
     setShowZoom(false);
   }, []);
 
-  const handleScan = useCallback(async (decodedText: string) => {
+  const submitToken = useCallback(async (raw: string) => {
     if (processingRef.current) return;
     processingRef.current = true;
 
-    await stopScanner();
+    const token = extractToken(raw);
 
     try {
       const res = await fetch("/api/attendance/check-in", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: decodedText }),
+        body: JSON.stringify({ token }),
       });
 
       const data = await res.json();
@@ -108,6 +123,20 @@ export default function QrScanner() {
       processingRef.current = false;
     }
   }, [stopScanner]);
+
+  const handleScan = useCallback(async (decodedText: string) => {
+    await stopScanner();
+    await submitToken(decodedText);
+  }, [stopScanner, submitToken]);
+
+  // Auto-submit when token comes from URL param (external camera scan)
+  useEffect(() => {
+    if (autoToken) {
+      setState({ status: "scanning" });
+      submitToken(autoToken);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const startScanner = useCallback(async () => {
     setState({ status: "scanning" });
