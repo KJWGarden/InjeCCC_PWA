@@ -8,17 +8,67 @@ type ScanState =
   | { status: "success"; message: string }
   | { status: "error"; message: string };
 
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 5;
+const ZOOM_STEP = 0.1;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
 export default function QrScanner() {
   const [state, setState] = useState<ScanState>({ status: "idle" });
+  const [zoom, setZoom] = useState(1);
+  const [showZoom, setShowZoom] = useState(false);
   const scannerRef = useRef<HTMLDivElement>(null);
   const html5QrRef = useRef<import("html5-qrcode").Html5Qrcode | null>(null);
   const processingRef = useRef(false);
+  const zoomRef = useRef(1);
+  const zoomCapRef = useRef<{ isSupported: () => boolean; apply: (v: number) => Promise<void>; min: () => number; max: () => number } | null>(null);
+  const hideZoomTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // pinch state
+  const pinchStartDist = useRef<number | null>(null);
+  const pinchStartZoom = useRef(1);
+
+  // swipe state (single finger vertical)
+  const swipeStartY = useRef<number | null>(null);
+  const swipeStartZoom = useRef(1);
+
+  const applyZoom = useCallback(async (newZoom: number) => {
+    const capped = clamp(newZoom, MIN_ZOOM, MAX_ZOOM);
+    zoomRef.current = capped;
+    setZoom(capped);
+    setShowZoom(true);
+
+    if (hideZoomTimer.current) clearTimeout(hideZoomTimer.current);
+    hideZoomTimer.current = setTimeout(() => setShowZoom(false), 1500);
+
+    if (zoomCapRef.current?.isSupported()) {
+      const min = zoomCapRef.current.min();
+      const max = zoomCapRef.current.max();
+      const native = clamp(capped, min, max);
+      await zoomCapRef.current.apply(native).catch(() => {});
+    }
+  }, []);
+
+  const initZoomCapability = useCallback(() => {
+    if (!html5QrRef.current) return;
+    try {
+      const caps = html5QrRef.current.getRunningTrackCameraCapabilities();
+      const zoomFeature = caps.zoomFeature();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      zoomCapRef.current = zoomFeature as any;
+    } catch {
+      zoomCapRef.current = null;
+    }
+  }, []);
 
   const stopScanner = useCallback(async () => {
     if (html5QrRef.current) {
       try {
         const scannerState = html5QrRef.current.getState();
-        if (scannerState === 2) { // SCANNING state
+        if (scannerState === 2) {
           await html5QrRef.current.stop();
         }
       } catch {
@@ -26,6 +76,10 @@ export default function QrScanner() {
       }
       html5QrRef.current = null;
     }
+    zoomCapRef.current = null;
+    zoomRef.current = 1;
+    setZoom(1);
+    setShowZoom(false);
   }, []);
 
   const handleScan = useCallback(async (decodedText: string) => {
@@ -58,6 +112,8 @@ export default function QrScanner() {
   const startScanner = useCallback(async () => {
     setState({ status: "scanning" });
     processingRef.current = false;
+    zoomRef.current = 1;
+    setZoom(1);
 
     try {
       const { Html5Qrcode } = await import("html5-qrcode");
@@ -68,21 +124,67 @@ export default function QrScanner() {
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 250, height: 250 } },
         handleScan,
-        () => {} // ignore decode failures
+        () => {}
       );
+
+      // init zoom capability after camera starts
+      setTimeout(initZoomCapability, 500);
     } catch {
       setState({
         status: "error",
         message: "카메라를 사용할 수 없습니다. 카메라 권한을 확인해주세요.",
       });
     }
-  }, [handleScan]);
+  }, [handleScan, initZoomCapability]);
+
+  // Touch gesture handlers
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      // pinch start
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      pinchStartDist.current = Math.sqrt(dx * dx + dy * dy);
+      pinchStartZoom.current = zoomRef.current;
+      swipeStartY.current = null;
+    } else if (e.touches.length === 1) {
+      swipeStartY.current = e.touches[0].clientY;
+      swipeStartZoom.current = zoomRef.current;
+      pinchStartDist.current = null;
+    }
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+
+    if (e.touches.length === 2 && pinchStartDist.current !== null) {
+      // pinch zoom
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const scale = dist / pinchStartDist.current;
+      applyZoom(pinchStartZoom.current * scale);
+    } else if (e.touches.length === 1 && swipeStartY.current !== null) {
+      // single-finger vertical swipe to zoom
+      const deltaY = swipeStartY.current - e.touches[0].clientY;
+      // 100px swipe = 1x zoom change
+      const zoomDelta = deltaY / 100;
+      applyZoom(swipeStartZoom.current + zoomDelta);
+    }
+  }, [applyZoom]);
+
+  const handleTouchEnd = useCallback(() => {
+    pinchStartDist.current = null;
+    swipeStartY.current = null;
+  }, []);
 
   useEffect(() => {
     return () => {
       stopScanner();
+      if (hideZoomTimer.current) clearTimeout(hideZoomTimer.current);
     };
   }, [stopScanner]);
+
+  const zoomPercent = Math.round(((zoom - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM)) * 100);
 
   return (
     <div className="flex flex-col items-center gap-4">
@@ -105,12 +207,56 @@ export default function QrScanner() {
       )}
 
       <div
-        id="qr-reader"
-        ref={scannerRef}
-        className={`w-full max-w-sm rounded-lg overflow-hidden ${
-          state.status === "scanning" ? "" : "hidden"
-        }`}
-      />
+        className={`relative w-full max-w-sm ${state.status === "scanning" ? "" : "hidden"}`}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{ touchAction: "none" }}
+      >
+        <div
+          id="qr-reader"
+          ref={scannerRef}
+          className="w-full rounded-lg overflow-hidden"
+        />
+
+        {/* Zoom indicator */}
+        {showZoom && (
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 pointer-events-none">
+            <div className="bg-black/60 text-white text-sm font-semibold px-3 py-1 rounded-full">
+              {zoom.toFixed(1)}x
+            </div>
+            <div className="w-24 h-1.5 bg-white/30 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-white rounded-full transition-all"
+                style={{ width: `${zoomPercent}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Zoom hint */}
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 pointer-events-none">
+          <span className="bg-black/50 text-white/80 text-xs px-2 py-1 rounded-full whitespace-nowrap">
+            핀치 또는 위아래 스와이프로 줌 조절
+          </span>
+        </div>
+
+        {/* Zoom buttons */}
+        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-2">
+          <button
+            className="btn btn-circle btn-sm bg-black/50 border-none text-white hover:bg-black/70"
+            onClick={() => applyZoom(zoomRef.current + ZOOM_STEP * 5)}
+          >
+            +
+          </button>
+          <button
+            className="btn btn-circle btn-sm bg-black/50 border-none text-white hover:bg-black/70"
+            onClick={() => applyZoom(zoomRef.current - ZOOM_STEP * 5)}
+          >
+            −
+          </button>
+        </div>
+      </div>
 
       {state.status === "idle" && (
         <button className="btn btn-primary btn-lg" onClick={startScanner}>
